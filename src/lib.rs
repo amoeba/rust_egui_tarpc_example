@@ -1,18 +1,15 @@
-use core::panic;
-
 use eframe::egui;
-use futures::prelude::*;
+use std::{future::Future, sync::mpsc as std_mpsc};
 use tarpc::context;
-use tokio::sync::mpsc;
 
 pub struct Application {
     name: String,
     age: u32,
-    gui_rx: mpsc::Receiver<GuiMessage>,
+    gui_rx: std_mpsc::Receiver<GuiMessage>,
 }
 
 impl Application {
-    pub fn new(gui_rx: mpsc::Receiver<GuiMessage>) -> Self {
+    pub fn new(gui_rx: std_mpsc::Receiver<GuiMessage>) -> Self {
         Self {
             name: "Test".to_string(),
             age: 40,
@@ -25,8 +22,8 @@ impl eframe::App for Application {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         while let Ok(message) = self.gui_rx.try_recv() {
             match message {
-                GuiMessage::SendString(_) => {
-                    panic!();
+                GuiMessage::SendString(msg) => {
+                    println!("Received message in GUI: {}", msg);
                 }
             }
         }
@@ -54,33 +51,22 @@ pub enum GuiMessage {
 #[tarpc::service]
 pub trait World {
     async fn hello(name: String) -> String;
-    async fn handle_recvfrom(data: Vec<u8>) -> String;
 }
+
 #[derive(Clone)]
 pub struct HelloServer {
-    pub gui_tx: mpsc::Sender<GuiMessage>,
+    pub gui_tx: std_mpsc::Sender<GuiMessage>,
 }
 
 impl World for HelloServer {
     async fn hello(self, _: context::Context, name: String) -> String {
-        println!("HelloServer hello imlpl");
+        println!("HelloServer hello impl");
 
         self.gui_tx
             .send(GuiMessage::SendString("SendString".to_string()))
-            .await
-            .expect("TODO");
+            .expect("Failed to send message to GUI");
 
         format!("Hello, {name}! You are connected")
-    }
-
-    async fn handle_recvfrom(self, _: context::Context, data: Vec<u8>) -> String {
-        println!("handle_recvfrom: {data:?}");
-
-        for (_, byte) in data.iter().enumerate() {
-            println!("got {byte:02X}");
-        }
-
-        "got it".to_string()
     }
 }
 
