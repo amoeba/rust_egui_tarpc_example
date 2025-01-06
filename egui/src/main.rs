@@ -1,4 +1,5 @@
 use futures::StreamExt;
+use service::{spawn, Application, GuiMessage, HelloServer, ServerMessage, World};
 use std::{
     net::{IpAddr, Ipv6Addr},
     thread,
@@ -7,91 +8,19 @@ use std::{
 use eframe::egui;
 use futures::prelude::*;
 use tarpc::{
-    context,
     server::{self, Channel},
     tokio_serde::formats::Json,
 };
 use tokio::{runtime::Runtime, sync::mpsc};
 
-pub struct Application {
-    name: String,
-    age: u32,
-}
-
-impl Default for Application {
-    fn default() -> Self {
-        Self {
-            name: "Arthur".to_owned(),
-            age: 42,
-        }
-    }
-}
-
-impl eframe::App for Application {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("My egui Application");
-            ui.horizontal(|ui| {
-                let name_label = ui.label("Your name: ");
-                ui.text_edit_singleline(&mut self.name)
-                    .labelled_by(name_label.id);
-            });
-            ui.add(egui::Slider::new(&mut self.age, 0..=120).text("age"));
-            if ui.button("Increment").clicked() {
-                self.age += 1;
-            }
-            ui.label(format!("Hello '{}', age {}", self.name, self.age));
-        });
-    }
-}
-
-pub enum ServerMessage {
-    NewData(String),
-    StatusUpdate(String),
-    Error(String),
-}
-
-// Messages from GUI to RPC server
-pub enum GuiMessage {
-    SendData(String),
-    RequestUpdate,
-}
-
-#[tarpc::service]
-pub trait World {
-    async fn hello(name: String) -> String;
-    async fn handle_recvfrom(data: Vec<u8>) -> String;
-}
-#[derive(Clone)]
-pub struct HelloServer {
-    pub gui_tx: mpsc::UnboundedSender<ServerMessage>,
-}
-
-impl World for HelloServer {
-    async fn hello(self, _: context::Context, name: String) -> String {
-        format!("Hello, {name}! You are connected")
-    }
-
-    async fn handle_recvfrom(self, _: context::Context, data: Vec<u8>) -> String {
-        println!("handle_recvfrom: {data:?}");
-
-        for (_, byte) in data.iter().enumerate() {
-            println!("got {byte:02X}");
-        }
-
-        "got it".to_string()
-    }
-}
-
-pub async fn spawn(fut: impl Future<Output = ()> + Send + 'static) {
-    tokio::spawn(fut);
-}
-
 fn main() -> eframe::Result {
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 
-    let (_server_tx, mut server_rx) = mpsc::unbounded_channel::<GuiMessage>();
+    let (server_tx, mut server_rx) = mpsc::unbounded_channel::<GuiMessage>();
     let (gui_tx, _gui_rx) = mpsc::unbounded_channel::<ServerMessage>();
+
+    // WIP
+    let server_tx_clone = server_tx.clone();
 
     // Spawn tokio runtime in a separate thread
     let _hdl = thread::spawn(move || {
@@ -120,17 +49,32 @@ fn main() -> eframe::Result {
                 .buffer_unordered(10)
                 .for_each(|_| async {})
                 .await;
+
+            tokio::spawn(async move {
+                while let Some(msg) = server_rx.recv().await {
+                    match msg {
+                        GuiMessage::SendData(data) => {
+                            println!("Server received data: {}", data);
+                            // Handle the data
+                        }
+                        GuiMessage::RequestUpdate => {
+                            println!("Update requested");
+                            // Send some update
+                        }
+                    }
+                }
+            });
         });
     });
 
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([320.0, 240.0]),
-        ..Default::default()
-    };
-
+    let options = eframe::NativeOptions::default();
     eframe::run_native(
         "My egui App",
         options,
-        Box::new(|cc| Ok(Box::<Application>::default())),
+        Box::new(|cc| {
+            // Move `server_rx` into the `Application` struct here
+            let app = Application::new(_gui_rx);
+            Ok(Box::new(app))
+        }),
     )
 }
