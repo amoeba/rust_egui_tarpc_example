@@ -1,0 +1,27 @@
+[package]
+name = "rust-egui-tarpc"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eframe = "0.30.0"
+env_logger = { version = "0.10", default-features = false, features = [
+    "auto-color",
+    "humantime",
+] }
+anyhow = "1.0"
+futures = "0.3"
+tarpc = { version = "0.35", features = ["full"] }
+tokio = { version = "1.42.0", features = ["full"] }
+
+[lib]
+name = "service"
+path = "src/lib.rs"
+
+[[bin]]
+name = "main"
+path = "src/main.rs"
+
+[[bin]]
+name = "client"
+path = "src/client.rs"
