@@ -1,3 +1,5 @@
+use core::panic;
+
 use eframe::egui;
 use futures::prelude::*;
 use tarpc::context;
@@ -6,11 +8,11 @@ use tokio::sync::mpsc;
 pub struct Application {
     name: String,
     age: u32,
-    gui_rx: mpsc::UnboundedReceiver<ServerMessage>,
+    gui_rx: mpsc::Receiver<GuiMessage>,
 }
 
 impl Application {
-    pub fn new(gui_rx: mpsc::UnboundedReceiver<ServerMessage>) -> Self {
+    pub fn new(gui_rx: mpsc::Receiver<GuiMessage>) -> Self {
         Self {
             name: "Test".to_string(),
             age: 40,
@@ -23,14 +25,8 @@ impl eframe::App for Application {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         while let Ok(message) = self.gui_rx.try_recv() {
             match message {
-                ServerMessage::NewData(_) => {
-                    println!("TODO");
-                }
-                ServerMessage::StatusUpdate(_) => {
-                    println!("TODO");
-                }
-                ServerMessage::Error(_) => {
-                    println!("TODO");
+                GuiMessage::SendString(_) => {
+                    panic!();
                 }
             }
         }
@@ -51,17 +47,8 @@ impl eframe::App for Application {
     }
 }
 
-// Message from Server to GUI
-pub enum ServerMessage {
-    NewData(String),
-    StatusUpdate(String),
-    Error(String),
-}
-
-// Messages from GUI to RPC server
 pub enum GuiMessage {
-    SendData(String),
-    RequestUpdate,
+    SendString(String),
 }
 
 #[tarpc::service]
@@ -71,13 +58,16 @@ pub trait World {
 }
 #[derive(Clone)]
 pub struct HelloServer {
-    pub gui_tx: mpsc::UnboundedSender<ServerMessage>,
+    pub gui_tx: mpsc::Sender<GuiMessage>,
 }
 
 impl World for HelloServer {
     async fn hello(self, _: context::Context, name: String) -> String {
+        println!("HelloServer hello imlpl");
+
         self.gui_tx
-            .send(ServerMessage::NewData("got hello".to_string()))
+            .send(GuiMessage::SendString("SendString".to_string()))
+            .await
             .expect("TODO");
 
         format!("Hello, {name}! You are connected")

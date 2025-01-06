@@ -1,35 +1,30 @@
-use futures::StreamExt;
-use service::{spawn, Application, GuiMessage, HelloServer, ServerMessage, World};
 use std::{
     net::{IpAddr, Ipv6Addr},
     thread,
 };
 
-use eframe::egui;
 use futures::prelude::*;
+use futures::StreamExt;
 use tarpc::{
     server::{self, Channel},
     tokio_serde::formats::Json,
 };
 use tokio::{runtime::Runtime, sync::mpsc};
 
+use service::{spawn, Application, HelloServer, World};
+
 fn main() -> eframe::Result {
-    env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
+    env_logger::init();
 
-    let (server_tx, mut server_rx) = mpsc::unbounded_channel::<GuiMessage>();
-    let (gui_tx, _gui_rx) = mpsc::unbounded_channel::<ServerMessage>();
+    let (gui_tx, gui_rx) = mpsc::channel(32);
 
-    // WIP
-    let server_tx_clone = server_tx.clone();
-
-    // Spawn tokio runtime in a separate thread
     let _hdl = thread::spawn(move || {
         let rt = Runtime::new().unwrap();
 
         rt.block_on(async move {
             let server_addr = (IpAddr::V6(Ipv6Addr::LOCALHOST), 5000);
 
-            let mut listener = tarpc::serde_transport::tcp::listen(&server_addr, Json::default)
+            let listener = tarpc::serde_transport::tcp::listen(&server_addr, Json::default)
                 .await
                 .expect("TODO");
 
@@ -49,31 +44,16 @@ fn main() -> eframe::Result {
                 .buffer_unordered(10)
                 .for_each(|_| async {})
                 .await;
-
-            tokio::spawn(async move {
-                while let Some(msg) = server_rx.recv().await {
-                    match msg {
-                        GuiMessage::SendData(data) => {
-                            println!("Server received data: {}", data);
-                            // Handle the data
-                        }
-                        GuiMessage::RequestUpdate => {
-                            println!("Update requested");
-                            // Send some update
-                        }
-                    }
-                }
-            });
         });
     });
 
     let options = eframe::NativeOptions::default();
+
     eframe::run_native(
         "My egui App",
         options,
         Box::new(|cc| {
-            // Move `server_rx` into the `Application` struct here
-            let app = Application::new(_gui_rx);
+            let app = Application::new(gui_rx);
             Ok(Box::new(app))
         }),
     )
