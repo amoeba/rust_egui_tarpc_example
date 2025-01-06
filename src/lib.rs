@@ -50,7 +50,7 @@ pub enum GuiMessage {
 
 #[tarpc::service]
 pub trait World {
-    async fn hello(name: String) -> String;
+    async fn hello(message: String) -> String;
 }
 
 #[derive(Clone)]
@@ -59,14 +59,14 @@ pub struct HelloServer {
 }
 
 impl World for HelloServer {
-    async fn hello(self, _: context::Context, name: String) -> String {
-        println!("HelloServer hello impl");
+    async fn hello(self, _: context::Context, message: String) -> String {
+        println!("HelloServer hello impl: {message}");
 
         self.gui_tx
             .send(GuiMessage::SendString("SendString".to_string()))
             .expect("Failed to send message to GUI");
 
-        format!("Hello, {name}! You are connected")
+        format!("Hello, {message}! You are connected")
     }
 }
 
