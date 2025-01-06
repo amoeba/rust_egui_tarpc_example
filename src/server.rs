@@ -9,7 +9,7 @@ use service::World;
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use tarpc::{
     context,
-    server::{self, incoming::Incoming, Channel},
+    server::{self, Channel},
     tokio_serde::formats::Json,
 };
 
