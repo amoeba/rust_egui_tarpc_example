@@ -14,7 +14,6 @@ pub struct Application {
     name: String,
     age: u32,
     rx: Receiver<GuiMessage>,
-    needs_update: bool,
 }
 
 impl Application {
@@ -22,8 +21,7 @@ impl Application {
         Self {
             name: "Test".to_string(),
             age: 40,
-            rx: rx,
-            needs_update: false,
+            rx,
         }
     }
 }
@@ -38,7 +36,6 @@ impl eframe::App for Application {
                 Ok(msg) => match msg {
                     GuiMessage::Hello(_) => {
                         self.age += 1;
-                        self.needs_update = true;
                     }
                 },
                 Err(TryRecvError::Empty) => break,
@@ -47,11 +44,6 @@ impl eframe::App for Application {
                     break;
                 }
             }
-        }
-
-        if self.needs_update {
-            ctx.request_repaint();
-            self.needs_update = false;
         }
 
         // Handle UI
@@ -88,8 +80,10 @@ fn main() -> eframe::Result {
         }
     });
 
-    let options = eframe::NativeOptions::default();
-
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default().with_inner_size([320.0, 240.0]),
+        ..Default::default()
+    };
     let app = Application::new(rx);
     eframe::run_native("My egui App", options, Box::new(|_cc| Ok(Box::new(app))))
 }
