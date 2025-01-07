@@ -1,5 +1,10 @@
+use core::panic;
+use log::{debug, error, info, log_enabled, Level};
 use std::{
-    sync::mpsc::{channel, Receiver, TryRecvError},
+    sync::{
+        mpsc::{channel, Receiver, TryRecvError},
+        Arc, Mutex,
+    },
     thread,
     time::Duration,
 };
@@ -8,6 +13,10 @@ use eframe::egui;
 
 pub enum GuiMessage {
     Hello(String),
+}
+
+pub enum PaintMessage {
+    RequestRepaint,
 }
 
 pub struct Application {
@@ -66,13 +75,34 @@ impl eframe::App for Application {
 fn main() -> eframe::Result {
     env_logger::init();
 
+    // Channel for sending updates related to mutating the GUI state
     let (tx, rx): (std::sync::mpsc::Sender<GuiMessage>, Receiver<GuiMessage>) = channel();
 
+    // Create a second mpsc channel for sending updates from outside the
+    // application's CreationContext into it.
+    // TODO: I'm not sure if this actually works or is achieveable
+    let (paint_tx, paint_rx): (
+        std::sync::mpsc::Sender<PaintMessage>,
+        Receiver<PaintMessage>,
+    ) = channel();
+
+    // WIP
+    let final_paint_rx = Arc::new(Mutex::new(paint_rx));
+
+    // WIP. Replace this with RPC code eventually.
     let tx = tx.clone();
-    let mut n = 100;
+    let ptx = paint_tx.clone();
+    let mut n = 60;
     thread::spawn(move || loop {
         tx.send(GuiMessage::Hello("World!".to_string())).unwrap();
-        thread::sleep(Duration::from_millis(100));
+
+        let paint_tx_res = ptx.send(PaintMessage::RequestRepaint);
+        match paint_tx_res {
+            Ok(()) => println!("tx success"),
+            Err(error) => println!("tx error: {error}"),
+        }
+
+        thread::sleep(Duration::from_secs(1));
         n -= 1;
 
         if n < 0 {
@@ -80,10 +110,50 @@ fn main() -> eframe::Result {
         }
     });
 
+    // Application code
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([320.0, 240.0]),
         ..Default::default()
     };
+
     let app = Application::new(rx);
-    eframe::run_native("My egui App", options, Box::new(|_cc| Ok(Box::new(app))))
+
+    // WIP:
+    let paint_rx_clone = Arc::clone(&final_paint_rx);
+
+    eframe::run_native(
+        "My egui App",
+        options,
+        Box::new(|cc| {
+            println!("Hello from inside CreationContext");
+            let frame = cc.egui_ctx.clone();
+
+            thread::spawn(move || {
+                println!("Can threads print to stdout?");
+                debug!("this is a debug {}", "message");
+
+                loop {
+                    println!("loop");
+                    match paint_rx_clone.try_lock().unwrap().try_recv() {
+                        Ok(msg) => match msg {
+                            PaintMessage::RequestRepaint => {
+                                println!("Repaint request received!");
+                                frame.request_repaint();
+                            }
+                        },
+                        Err(TryRecvError::Empty) => {
+                            println!("Empty");
+                        }
+                        Err(TryRecvError::Disconnected) => {
+                            println!("Channel disconnected");
+                        }
+                    }
+
+                    thread::sleep(Duration::from_secs(1));
+                }
+            });
+
+            Ok(Box::new(app))
+        }),
+    )
 }
