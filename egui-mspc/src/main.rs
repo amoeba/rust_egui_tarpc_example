@@ -30,23 +30,27 @@ impl Application {
 
 impl eframe::App for Application {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        match self.rx.try_recv() {
-            Ok(_) => {
-                self.age += 1;
-                self.needs_update = true;
-            }
-            Err(TryRecvError::Empty) => {}
-            Err(TryRecvError::Disconnected) => {
-                println!("Channel disconnected");
+        // Handle mspc channel
+        loop {
+            match self.rx.try_recv() {
+                Ok(_) => {
+                    self.age += 1;
+                    self.needs_update = true;
+                }
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => {
+                    println!("Channel disconnected");
+                    break;
+                }
             }
         }
 
-        // Only request a repaint when we actually need one
         if self.needs_update {
             ctx.request_repaint();
             self.needs_update = false;
         }
 
+        // Handle UI
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("My egui Application");
             ui.horizontal(|ui| {
