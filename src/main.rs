@@ -1,5 +1,4 @@
-use core::panic;
-use log::{debug, error, info, log_enabled, Level};
+use log::debug;
 use std::{
     sync::{
         mpsc::{channel, Receiver, TryRecvError},
@@ -35,8 +34,6 @@ impl Application {
     }
 }
 
-// TODO: This doesn't work as-is, look at https://github.com/emilk/egui/discussions/484
-// to see how it's actually done.
 impl eframe::App for Application {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Handle mspc channel
@@ -86,9 +83,6 @@ fn main() -> eframe::Result {
         Receiver<PaintMessage>,
     ) = channel();
 
-    // WIP
-    let final_paint_rx = Arc::new(Mutex::new(paint_rx));
-
     // WIP. Replace this with RPC code eventually.
     let tx = tx.clone();
     let ptx = paint_tx.clone();
@@ -98,7 +92,7 @@ fn main() -> eframe::Result {
 
         let paint_tx_res = ptx.send(PaintMessage::RequestRepaint);
         match paint_tx_res {
-            Ok(()) => println!("tx success"),
+            Ok(()) => println!("Repaint Requested"),
             Err(error) => println!("tx error: {error}"),
         }
 
@@ -118,7 +112,9 @@ fn main() -> eframe::Result {
 
     let app = Application::new(rx);
 
-    // WIP:
+    // Note: Is this really necessary? I did this so I could keep the Receiver
+    // alive inside my Application's polling loop
+    let final_paint_rx = Arc::new(Mutex::new(paint_rx));
     let paint_rx_clone = Arc::clone(&final_paint_rx);
 
     eframe::run_native(
@@ -129,11 +125,9 @@ fn main() -> eframe::Result {
             let frame = cc.egui_ctx.clone();
 
             thread::spawn(move || {
-                println!("Can threads print to stdout?");
-                debug!("this is a debug {}", "message");
+                debug!("Spawning app repaint poll thread");
 
                 loop {
-                    println!("loop");
                     match paint_rx_clone.try_lock().unwrap().try_recv() {
                         Ok(msg) => match msg {
                             PaintMessage::RequestRepaint => {
@@ -141,15 +135,15 @@ fn main() -> eframe::Result {
                                 frame.request_repaint();
                             }
                         },
-                        Err(TryRecvError::Empty) => {
-                            println!("Empty");
-                        }
+                        Err(TryRecvError::Empty) => {}
                         Err(TryRecvError::Disconnected) => {
                             println!("Channel disconnected");
+                            break;
                         }
                     }
 
-                    thread::sleep(Duration::from_secs(1));
+                    // ? 60FPS
+                    thread::sleep(Duration::from_millis(16));
                 }
             });
 
