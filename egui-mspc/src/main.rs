@@ -33,10 +33,12 @@ impl eframe::App for Application {
         // Handle mspc channel
         loop {
             match self.rx.try_recv() {
-                Ok(_) => {
-                    self.age += 1;
-                    self.needs_update = true;
-                }
+                Ok(msg) => match msg {
+                    GuiMessage::Hello(_) => {
+                        self.age += 1;
+                        self.needs_update = true;
+                    }
+                },
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
                     println!("Channel disconnected");
