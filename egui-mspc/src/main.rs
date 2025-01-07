@@ -1,5 +1,5 @@
 use std::{
-    sync::mpsc::{channel, Receiver},
+    sync::mpsc::{channel, Receiver, TryRecvError},
     thread,
     time::Duration,
 };
@@ -14,6 +14,7 @@ pub struct Application {
     name: String,
     age: u32,
     rx: Receiver<GuiMessage>,
+    needs_update: bool,
 }
 
 impl Application {
@@ -22,19 +23,28 @@ impl Application {
             name: "Test".to_string(),
             age: 40,
             rx: rx,
+            needs_update: false,
         }
     }
 }
 
 impl eframe::App for Application {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        while let Ok(message) = self.rx.try_recv() {
-            match message {
-                GuiMessage::Hello(msg) => {
-                    println!("Received message in GUI: {}", msg);
-                    self.age += 1;
-                }
+        match self.rx.try_recv() {
+            Ok(_) => {
+                self.age += 1;
+                self.needs_update = true;
             }
+            Err(TryRecvError::Empty) => {}
+            Err(TryRecvError::Disconnected) => {
+                println!("Channel disconnected");
+            }
+        }
+
+        // Only request a repaint when we actually need one
+        if self.needs_update {
+            ctx.request_repaint();
+            self.needs_update = false;
         }
 
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -59,16 +69,19 @@ fn main() -> eframe::Result {
     let (tx, rx): (std::sync::mpsc::Sender<GuiMessage>, Receiver<GuiMessage>) = channel();
 
     let tx = tx.clone();
+    let mut n = 100;
     thread::spawn(move || loop {
         tx.send(GuiMessage::Hello("World!".to_string())).unwrap();
-        thread::sleep(Duration::from_secs(1));
+        thread::sleep(Duration::from_millis(100));
+        n -= 1;
+
+        if n < 0 {
+            break;
+        }
     });
 
     let options = eframe::NativeOptions::default();
 
-    eframe::run_native(
-        "My egui App",
-        options,
-        Box::new(|_cc| Ok(Box::new(Application::new(rx)))),
-    )
+    let app = Application::new(rx);
+    eframe::run_native("My egui App", options, Box::new(|_cc| Ok(Box::new(app))))
 }
