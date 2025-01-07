@@ -28,6 +28,8 @@ impl Application {
     }
 }
 
+// TODO: This doesn't work as-is, look at https://github.com/emilk/egui/discussions/484
+// to see how it's actually done.
 impl eframe::App for Application {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Handle mspc channel
