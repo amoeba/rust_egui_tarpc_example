@@ -20,9 +20,12 @@ impl World for HelloServer {
         format!("Hello, {name}!")
     }
 }
+
+// This is from tarpc's source and makes the server loop code read a bit better
 async fn spawn(fut: impl Future<Output = ()> + Send + 'static) {
   tokio::spawn(fut);
 }
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
   let addr = (IpAddr::V4(Ipv4Addr::LOCALHOST), 5000);
@@ -36,7 +39,7 @@ async fn main() -> anyhow::Result<()> {
             let server = HelloServer;
             channel.execute(server.serve()).for_each(spawn)
         })
-        .buffer_unordered(2)
+        .buffer_unordered(10)
         .for_each(|_| async {})
         .await;
 
