@@ -1,15 +1,19 @@
 use futures::{future, StreamExt};
 use log::debug;
 use tarpc::{client, context, serde_transport::tcp, server::{self, Channel}, tokio_serde::formats::Json, tokio_util::codec::LengthDelimitedCodec, transport};
-use tokio::{net::TcpListener, runtime::Runtime, spawn};
+use tokio::{net::TcpListener, runtime::Runtime};
 use std::{
-    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr}, sync::{
+    future::Future, net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr}, sync::{
         mpsc::{channel, Receiver, TryRecvError},
         Arc, Mutex,
     }, thread, time::Duration
 };
 
 use eframe::egui;
+
+async fn spawn(fut: impl Future<Output = ()> + Send + 'static) {
+    tokio::spawn(fut);
+  }
 
 pub enum GuiMessage {
     Hello(String),
@@ -126,24 +130,20 @@ fn main() -> eframe::Result {
     let runtime = tokio::runtime::Runtime::new().unwrap();
 
     runtime.spawn(async {
-        let server_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 5000);
-        let listener = tarpc::serde_transport::tcp::listen(&server_addr, Json::default)
-            .await
-            .expect("Failed to start TCP listener");
+        let addr = (IpAddr::V4(Ipv4Addr::LOCALHOST), 5000);
 
-        println!("Server listening on {}", server_addr);
-
+        let listener = tarpc::serde_transport::tcp::listen(&addr, Json::default).await.expect("whoops!");
         listener
+            // Ignore accept errors.
             .filter_map(|r| future::ready(r.ok()))
-            .for_each(|transport| {
+            .map(server::BaseChannel::with_defaults)
+            .map(|channel| {
+                println!("got a client request!");
                 let server = HelloServer;
-                async move {
-                    println!("Hello from inside tarpc foreach");
-                    let st = server::BaseChannel::with_defaults(transport)
-                        .execute(server.serve());
-                    tokio::spawn(st.for_each(|_| future::ready(())));
-                }
+                channel.execute(server.serve()).for_each(spawn)
             })
+            .buffer_unordered(10)
+            .for_each(|_| async {})
             .await;
     });
 
