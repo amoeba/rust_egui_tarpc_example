@@ -18,9 +18,11 @@ async fn main() -> anyhow::Result<()> {
 
     println!("About to request...");
 
-    client
+    let resp = client
         .hello(context::current(), "Hello from the client".to_string())
         .await?;
+
+    println!("response is {resp}");
 
     println!("client main done");
 

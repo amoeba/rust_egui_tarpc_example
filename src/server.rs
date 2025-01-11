@@ -1,7 +1,10 @@
-use std::net::{IpAddr, Ipv4Addr};
-
+use std::{future::Future, net::{IpAddr, Ipv4Addr}};
 use futures::{future, StreamExt};
-use tarpc::{context, server::{self, Channel}, tokio_serde::formats::Json};
+use tarpc::{
+    context,
+    server::{self, Channel},
+    tokio_serde::formats::Json,
+};
 
 #[tarpc::service]
 trait World {
@@ -17,30 +20,25 @@ impl World for HelloServer {
         format!("Hello, {name}!")
     }
 }
-
+async fn spawn(fut: impl Future<Output = ()> + Send + 'static) {
+  tokio::spawn(fut);
+}
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
   let addr = (IpAddr::V4(Ipv4Addr::LOCALHOST), 5000);
-  let listener = tarpc::serde_transport::tcp::listen(&addr, Json::default)
-      .await
-      .expect("Failed to start TCP listener");
 
-  println!("Server listening on {}", addr.0);
-
-  listener
-      .filter_map(|r| future::ready(r.ok()))
-      .for_each(|transport| {
-          let server = HelloServer;
-          async move {
-              println!("Hello from inside tarpc foreach");
-              let stream_fut = server::BaseChannel::with_defaults(transport)
-                  .execute(server.serve());
-              tokio::spawn(stream_fut.for_each(|x| {
-                println!("hi");
-                future::ready(())}));
-          }
-      })
-      .await;
+    let listener = tarpc::serde_transport::tcp::listen(&addr, Json::default).await?;
+    listener
+        // Ignore accept errors.
+        .filter_map(|r| future::ready(r.ok()))
+        .map(server::BaseChannel::with_defaults)
+        .map(|channel| {
+            let server = HelloServer;
+            channel.execute(server.serve()).for_each(spawn)
+        })
+        .buffer_unordered(2)
+        .for_each(|_| async {})
+        .await;
 
   Ok(())
 }
