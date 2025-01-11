@@ -1,11 +1,12 @@
+use futures::{future, StreamExt};
 use log::debug;
+use tarpc::{client, context, serde_transport::tcp, server::{self, Channel}, tokio_serde::formats::Json, tokio_util::codec::LengthDelimitedCodec, transport};
+use tokio::{net::TcpListener, runtime::Runtime, spawn};
 use std::{
-    sync::{
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr}, sync::{
         mpsc::{channel, Receiver, TryRecvError},
         Arc, Mutex,
-    },
-    thread,
-    time::Duration,
+    }, thread, time::Duration
 };
 
 use eframe::egui;
@@ -69,6 +70,23 @@ impl eframe::App for Application {
     }
 }
 
+// tarpc
+
+#[tarpc::service]
+trait World {
+    /// Returns a greeting for name.
+    async fn hello(name: String) -> String;
+}
+
+#[derive(Clone)]
+struct HelloServer;
+
+impl World for HelloServer {
+    async fn hello(self, _: context::Context, name: String) -> String {
+        format!("Hello, {name}!")
+    }
+}
+
 fn main() -> eframe::Result {
     env_logger::init();
 
@@ -102,6 +120,31 @@ fn main() -> eframe::Result {
         if n < 0 {
             break;
         }
+    });
+
+    // tarpc code
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+
+    runtime.spawn(async {
+        let server_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 5000);
+        let listener = tarpc::serde_transport::tcp::listen(&server_addr, Json::default)
+            .await
+            .expect("Failed to start TCP listener");
+
+            println!("Server listening on {}", server_addr);
+
+        listener
+        .filter_map(|r| future::ready(r.ok()))
+        .for_each(|transport| {
+            let server = HelloServer;
+            async move {
+                println!("Hello from inside tarpc foreach");
+                let st = server::BaseChannel::with_defaults(transport)
+                    .execute(server.serve());
+                tokio::spawn(st.for_each(|_| future::ready(())));
+            }
+        })
+        .await;
     });
 
     // Application code
