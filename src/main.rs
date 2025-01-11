@@ -131,20 +131,20 @@ fn main() -> eframe::Result {
             .await
             .expect("Failed to start TCP listener");
 
-            println!("Server listening on {}", server_addr);
+        println!("Server listening on {}", server_addr);
 
         listener
-        .filter_map(|r| future::ready(r.ok()))
-        .for_each(|transport| {
-            let server = HelloServer;
-            async move {
-                println!("Hello from inside tarpc foreach");
-                let st = server::BaseChannel::with_defaults(transport)
-                    .execute(server.serve());
-                tokio::spawn(st.for_each(|_| future::ready(())));
-            }
-        })
-        .await;
+            .filter_map(|r| future::ready(r.ok()))
+            .for_each(|transport| {
+                let server = HelloServer;
+                async move {
+                    println!("Hello from inside tarpc foreach");
+                    let st = server::BaseChannel::with_defaults(transport)
+                        .execute(server.serve());
+                    tokio::spawn(st.for_each(|_| future::ready(())));
+                }
+            })
+            .await;
     });
 
     // Application code
