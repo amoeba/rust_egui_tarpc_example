@@ -63,6 +63,7 @@ impl eframe::App for Application {
             let row_height = ui.text_style_height(&text_style);
             let total_rows = self.logs.len();
 
+            ui.heading("Logs");
             ui.vertical(|ui| {
                 ScrollArea::vertical().auto_shrink(false).show_rows(
                     ui,
