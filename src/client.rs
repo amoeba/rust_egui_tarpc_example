@@ -23,7 +23,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Update a string value
     let resp = client
-        .update_string(context::current(), "new value".to_string())
+        .update_string(context::current(), "this was set by the client".to_string())
         .await?;
     println!("Update string response is {resp}");
 
