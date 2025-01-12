@@ -1,13 +1,9 @@
+pub mod rpc;
+
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
+use rpc::WorldClient;
 use tarpc::{client, context, tokio_serde::formats::Json};
-
-#[tarpc::service]
-trait World {
-    /// Returns a greeting for name.
-    async fn hello(name: String) -> String;
-    async fn update_string(value: String) -> String;
-}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
