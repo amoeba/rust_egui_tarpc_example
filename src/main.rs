@@ -3,7 +3,6 @@ pub mod rpc;
 
 use futures::{future, StreamExt};
 use gui::Application;
-use log::debug;
 use rpc::{spawn, HelloServer, World};
 use rpc::{GuiMessage, PaintMessage};
 use std::{
@@ -26,26 +25,18 @@ use tokio::sync::{
 fn main() -> eframe::Result {
     env_logger::init();
 
-    //////////////
-    // CHANNELS //
-    //////////////
-
-    // Channel for sending updates related to mutating the GUI state
+    // Channel: GUI
     let (gui_tx, gui_rx) = channel::<GuiMessage>(32);
     let gui_rx_ref = Arc::new(Mutex::new(gui_rx));
     let gui_tx_ref = Arc::new(Mutex::new(gui_tx));
 
-    // Maybe removable channel for sending a request to the GUI to paint
+    // Channel: Painting
     let (paint_tx, paint_rx) = channel::<PaintMessage>(32);
     let paint_rx_ref = Arc::new(Mutex::new(paint_rx));
     let paint_tx_ref = Arc::new(Mutex::new(paint_tx));
 
-    ///////////
-    // TARPC //
-    ///////////
-
+    // tarpc
     let runtime = tokio::runtime::Runtime::new().unwrap();
-
     runtime.spawn(async move {
         let addr = (IpAddr::V4(Ipv4Addr::LOCALHOST), 5000);
 
@@ -68,7 +59,7 @@ fn main() -> eframe::Result {
             .await;
     });
 
-    // Application code
+    // gui
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([320.0, 240.0]),
         ..Default::default()
@@ -76,21 +67,18 @@ fn main() -> eframe::Result {
 
     let app = Application::new(Arc::clone(&gui_rx_ref));
 
-    // TODO: Rename
-    let x = Arc::clone(&paint_rx_ref);
+    // Pass a cloned paint_rx into the app so we can handle repaints
+    let app_paint_rx = Arc::clone(&paint_rx_ref);
 
     eframe::run_native(
-        "My egui App",
+        "Application",
         options,
         Box::new(|cc| {
-            println!("Hello from inside CreationContext");
             let frame = cc.egui_ctx.clone();
 
             thread::spawn(move || {
-                debug!("Spawning app repaint poll thread");
-
                 loop {
-                    match x.try_lock().unwrap().try_recv() {
+                    match app_paint_rx.try_lock().unwrap().try_recv() {
                         Ok(msg) => match msg {
                             PaintMessage::RequestRepaint => {
                                 println!("Repaint request received!");
