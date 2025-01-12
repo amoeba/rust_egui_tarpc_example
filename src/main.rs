@@ -1,14 +1,13 @@
 use futures::{future, StreamExt};
 use log::debug;
-use tarpc::{client, context, serde_transport::tcp, server::{self, Channel}, tokio_serde::formats::Json, tokio_util::codec::LengthDelimitedCodec, transport};
-use tokio::{net::TcpListener, runtime::Runtime};
 use std::{
-    future::Future, net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr}, sync::{
-        mpsc::{channel, Receiver, TryRecvError},
-        Arc, Mutex,
+    future::Future, net::{IpAddr, Ipv4Addr}, sync::{
+        Arc,
     }, thread, time::Duration
 };
 
+use tarpc::{context, server::{self, Channel}, tokio_serde::formats::Json};
+use tokio::sync::{mpsc::{channel, error::TryRecvError, Receiver, Sender}, Mutex};
 use eframe::egui;
 
 async fn spawn(fut: impl Future<Output = ()> + Send + 'static) {
@@ -17,6 +16,7 @@ async fn spawn(fut: impl Future<Output = ()> + Send + 'static) {
 
 pub enum GuiMessage {
     Hello(String),
+    UpdateString(String),
 }
 
 pub enum PaintMessage {
@@ -24,17 +24,15 @@ pub enum PaintMessage {
 }
 
 pub struct Application {
-    name: String,
-    age: u32,
-    rx: Receiver<GuiMessage>,
+    string: String,
+    gui_rx: Arc<Mutex<Receiver<GuiMessage>>>,
 }
 
 impl Application {
-    pub fn new(rx: Receiver<GuiMessage>) -> Self {
+    pub fn new(gui_rx: Arc<Mutex<Receiver<GuiMessage>>>) -> Self {
         Self {
-            name: "Test".to_string(),
-            age: 40,
-            rx,
+            string: "Unset".to_string(),
+            gui_rx,
         }
     }
 }
@@ -43,10 +41,13 @@ impl eframe::App for Application {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Handle mspc channel
         loop {
-            match self.rx.try_recv() {
+            match self.gui_rx.try_lock().unwrap().try_recv() {
                 Ok(msg) => match msg {
                     GuiMessage::Hello(_) => {
-                        self.age += 1;
+                        println!("GUI got Hello");
+                    },
+                    GuiMessage::UpdateString(value) => {
+                        self.string = value.to_string();
                     }
                 },
                 Err(TryRecvError::Empty) => break,
@@ -59,77 +60,73 @@ impl eframe::App for Application {
 
         // Handle UI
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("My egui Application");
+            ui.heading("Debugging");
             ui.horizontal(|ui| {
-                let name_label = ui.label("Your name: ");
-                ui.text_edit_singleline(&mut self.name)
-                    .labelled_by(name_label.id);
+                let string_label = ui.label("String: ");
+                ui.text_edit_singleline(&mut self.string)
+                    .labelled_by(string_label.id);
             });
-            ui.add(egui::Slider::new(&mut self.age, 0..=120).text("age"));
-            if ui.button("Increment").clicked() {
-                self.age += 1;
-            }
-            ui.label(format!("Hello '{}', age {}", self.name, self.age));
         });
     }
 }
 
 // tarpc
-
 #[tarpc::service]
 trait World {
     /// Returns a greeting for name.
     async fn hello(name: String) -> String;
+    async fn update_string(value: String) -> String;
 }
 
 #[derive(Clone)]
-struct HelloServer;
+pub struct HelloServer {
+    paint_tx: Arc<Mutex<Sender<PaintMessage>>>,
+    gui_tx: Arc<Mutex<Sender<GuiMessage>>>,
+}
 
 impl World for HelloServer {
     async fn hello(self, _: context::Context, name: String) -> String {
+
+        match self.paint_tx.lock().await.send(PaintMessage::RequestRepaint).await {
+                Ok(()) => println!("Repaint Requested"),
+                Err(error) => println!("tx error: {error}"),
+        }
+
         format!("Hello, {name}!")
+    }
+
+    async fn update_string(self, context: ::tarpc::context::Context,value:String) -> String {
+        println!("in tarpc server update_string handler!");
+
+        value
     }
 }
 
 fn main() -> eframe::Result {
     env_logger::init();
 
+    //////////////
+    // CHANNELS //
+    //////////////
+
     // Channel for sending updates related to mutating the GUI state
-    let (tx, rx): (std::sync::mpsc::Sender<GuiMessage>, Receiver<GuiMessage>) = channel();
+    let (gui_tx, gui_rx) = channel::<GuiMessage>(32);
+    let gui_rx_ref = Arc::new(Mutex::new(gui_rx));
+    let gui_tx_ref = Arc::new(Mutex::new(gui_tx));
 
-    // Create a second mpsc channel for sending updates from outside the
-    // application's CreationContext into it.
-    // TODO: I'm not sure if this actually works or is achieveable
-    let (paint_tx, paint_rx): (
-        std::sync::mpsc::Sender<PaintMessage>,
-        Receiver<PaintMessage>,
-    ) = channel();
+    // Maybe removable channel for sending a request to the GUI to paint
+    let (paint_tx, paint_rx) = channel::<PaintMessage>(32);
+    let paint_rx_ref = Arc::new(Mutex::new(paint_rx));
+    let paint_tx_ref = Arc::new(Mutex::new(paint_tx));
 
-    // WIP. Replace this with RPC code eventually.
-    let tx = tx.clone();
-    let ptx = paint_tx.clone();
-    let mut n = 60;
-    thread::spawn(move || loop {
-        tx.send(GuiMessage::Hello("World!".to_string())).unwrap();
+    ///////////
+    // TARPC //
+    ///////////
 
-        let paint_tx_res = ptx.send(PaintMessage::RequestRepaint);
-        match paint_tx_res {
-            Ok(()) => println!("Repaint Requested"),
-            Err(error) => println!("tx error: {error}"),
-        }
-
-        thread::sleep(Duration::from_secs(1));
-        n -= 1;
-
-        if n < 0 {
-            break;
-        }
-    });
-
-    // tarpc code
     let runtime = tokio::runtime::Runtime::new().unwrap();
 
-    runtime.spawn(async {
+
+    runtime.spawn(async move {
         let addr = (IpAddr::V4(Ipv4Addr::LOCALHOST), 5000);
 
         let listener = tarpc::serde_transport::tcp::listen(&addr, Json::default).await.expect("whoops!");
@@ -139,7 +136,7 @@ fn main() -> eframe::Result {
             .map(server::BaseChannel::with_defaults)
             .map(|channel| {
                 println!("got a client request!");
-                let server = HelloServer;
+                let server = HelloServer {paint_tx: Arc::clone(&paint_tx_ref), gui_tx: Arc::clone(&gui_tx_ref) };
                 channel.execute(server.serve()).for_each(spawn)
             })
             .buffer_unordered(10)
@@ -153,13 +150,11 @@ fn main() -> eframe::Result {
         ..Default::default()
     };
 
-    let app = Application::new(rx);
+    let app = Application::new(Arc::clone(&gui_rx_ref));
 
-    // Note: Is this really necessary? I did this so I could keep the Receiver
-    // alive inside my Application's polling loop
-    let final_paint_rx = Arc::new(Mutex::new(paint_rx));
-    let paint_rx_clone = Arc::clone(&final_paint_rx);
 
+    // TODO: Rename
+    let x = Arc::clone(&paint_rx_ref);
     eframe::run_native(
         "My egui App",
         options,
@@ -171,7 +166,7 @@ fn main() -> eframe::Result {
                 debug!("Spawning app repaint poll thread");
 
                 loop {
-                    match paint_rx_clone.try_lock().unwrap().try_recv() {
+                    match x.try_lock().unwrap().try_recv() {
                         Ok(msg) => match msg {
                             PaintMessage::RequestRepaint => {
                                 println!("Repaint request received!");

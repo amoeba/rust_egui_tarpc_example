@@ -6,6 +6,7 @@ use tarpc::{client, context, tokio_serde::formats::Json};
 trait World {
     /// Returns a greeting for name.
     async fn hello(name: String) -> String;
+    async fn update_string(value: String) -> String;
 }
 
 #[tokio::main]
@@ -19,7 +20,7 @@ async fn main() -> anyhow::Result<()> {
     println!("About to request...");
 
     let resp = client
-        .hello(context::current(), "Hello from the client".to_string())
+        .update_string(context::current(), "Hello from the client".to_string())
         .await?;
 
     println!("response is {resp}");
