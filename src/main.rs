@@ -1,9 +1,7 @@
 use futures::{future, StreamExt};
 use log::debug;
 use std::{
-    future::Future, net::{IpAddr, Ipv4Addr}, sync::{
-        Arc,
-    }, thread, time::Duration
+    future::Future, net::{IpAddr, Ipv4Addr}, sync::Arc, thread, time::Duration
 };
 
 use tarpc::{context, server::{self, Channel}, tokio_serde::formats::Json};
@@ -86,7 +84,6 @@ pub struct HelloServer {
 
 impl World for HelloServer {
     async fn hello(self, _: context::Context, name: String) -> String {
-
         match self.paint_tx.lock().await.send(PaintMessage::RequestRepaint).await {
                 Ok(()) => println!("Repaint Requested"),
                 Err(error) => println!("tx error: {error}"),
@@ -95,8 +92,13 @@ impl World for HelloServer {
         format!("Hello, {name}!")
     }
 
-    async fn update_string(self, context: ::tarpc::context::Context,value:String) -> String {
+    async fn update_string(self, context: ::tarpc::context::Context, value:String) -> String {
         println!("in tarpc server update_string handler!");
+
+        match self.gui_tx.lock().await.send(GuiMessage::UpdateString(value.to_string())).await {
+            Ok(()) => println!("Repaint to update string"),
+            Err(error) => println!("tx error: {error}"),
+        }
 
         value
     }
