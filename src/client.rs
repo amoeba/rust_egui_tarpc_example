@@ -11,9 +11,9 @@ use tarpc::{client, context, tokio_serde::formats::Json};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 5000);
+    let addr: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 5000);
     let transport = tarpc::serde_transport::tcp::connect(&addr, Json::default);
-    let client = WorldClient::new(client::Config::default(), transport.await?).spawn();
+    let client: WorldClient = WorldClient::new(client::Config::default(), transport.await?).spawn();
 
     // Say hello
     let resp = client

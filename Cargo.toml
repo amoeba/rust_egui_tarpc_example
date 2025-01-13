@@ -1,7 +1,12 @@
 [package]
-name = "egui-mspc"
+name = "rust_egui_tarpc_example"
+description = "Basic example of egui and tarpc"
+authors = ["Bryce Mecum <brycemecum@gmail.com>"]
+repository = "https://github.com/amoeba/rust_egui_tarpc_example"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+readme = "README.md"
 
 [[bin]]
 name = "app"
@@ -17,5 +22,5 @@ eframe = "0.30.0"
 env_logger = "0.11.6"
 futures = "0.3.31"
 log = "0.4.22"
-tarpc = { version = "0.35.0", features = ["full", "serde-transport", "serde-transport-json", "tcp", "tokio1"] }
-tokio = { version = "1.43.0", features = ["full", "rt-multi-thread", "sync"] }
+tarpc = { version = "0.35.0", features = ["serde-transport-json", "tcp"] }
+tokio = { version = "1.43.0", features = ["macros", "net", "rt-multi-thread"] }
